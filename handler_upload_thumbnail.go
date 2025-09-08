@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -32,8 +34,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
-
 	const maxMemory int64 = 10 << 20
 
 	err = r.ParseMultipartForm(int64(maxMemory))
@@ -51,11 +51,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	mediaType := fileHeader.Header.Get("Content-Type")
 
-	imageData, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Error reading file", err)
-		return
-	}
+	// imageData, err := io.ReadAll(file)
+	// if err != nil {
+	// 	respondWithError(w, http.StatusBadRequest, "Error reading file", err)
+	// 	return
+	// }
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -67,14 +67,23 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "Wrong userID for video", err)
 		return
 	}
+	extension := strings.SplitAfter(mediaType, "/")
 
-	newThumbnail := thumbnail{
-		data:      imageData,
-		mediaType: mediaType,
+	fileName := fmt.Sprintf("%v.%s", videoID, extension[1])
+	storePath := filepath.Join(cfg.assetsRoot, fileName)
+	newFile, err := os.Create(storePath)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error creating file", err)
+		return
 	}
 
-	datafiedThumbnail := base64.StdEncoding.EncodeToString(newThumbnail.data)
-	newThumbnailURL := fmt.Sprintf("data:%s;base64,%s", newThumbnail.mediaType, datafiedThumbnail)
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error writing file", err)
+		return
+	}
+
+	newThumbnailURL := fmt.Sprintf("http://localhost:8091/assets/%s", fileName)
 
 	video.ThumbnailURL = &newThumbnailURL
 	err = cfg.db.UpdateVideo(video)
