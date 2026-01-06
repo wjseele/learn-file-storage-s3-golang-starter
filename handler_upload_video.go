@@ -92,12 +92,25 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		ratio = "portrait"
 	}
 
+	newPath, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't process video", err)
+		return
+	}
+	newFile, err := os.Open(newPath)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't open the new file", err)
+		return
+	}
+	defer os.Remove(newFile.Name())
+	defer newFile.Close()
+
 	newVideoKey := fmt.Sprintf("%s/%s.mp4", ratio, videoIDString)
 
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         aws.String(newVideoKey),
-		Body:        tempFile,
+		Body:        newFile,
 		ContentType: aws.String(videoCheck),
 	})
 	if err != nil {
@@ -147,4 +160,14 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	}
 
 	return "other", nil
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	outputFilePath := filePath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputFilePath)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return outputFilePath, nil
 }
