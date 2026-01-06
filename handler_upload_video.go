@@ -39,32 +39,38 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	videoData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't find video", err)
+		return
 	}
 	if videoData.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "User doesn't own video", err)
+		return
 	}
 
 	videoFile, videoFileHeader, err := r.FormFile("video")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't form a video", err)
+		return
 	}
 	defer videoFile.Close()
 
 	videoCheck, _, err := mime.ParseMediaType(videoFileHeader.Header.Get("Content-Type"))
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't find content type", err)
+		return
 	}
 	if videoCheck != "video/mp4" {
 		respondWithError(w, http.StatusBadRequest, "Wrong content type", err)
+		return
 	}
 
 	tempFile, err := os.CreateTemp("", "tubely-upload.mp4")
 	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
 
-	_, err = io.Copy(tempFile, r.Body)
+	_, err = io.Copy(tempFile, videoFile)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't write video to file", err)
+		return
 	}
 
 	tempFile.Seek(0, io.SeekStart)
@@ -75,10 +81,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		Bucket:      &cfg.s3Bucket,
 		Key:         aws.String(newVideoKey),
 		Body:        tempFile,
-		ContentType: &videoCheck,
+		ContentType: aws.String("video/mp4"),
 	})
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error uploading file to S3", err)
+		return
 	}
 
 	newUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, newVideoKey)
@@ -86,5 +93,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	err = cfg.db.UpdateVideo(videoData)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error updating video data in db", err)
+		return
 	}
 }
