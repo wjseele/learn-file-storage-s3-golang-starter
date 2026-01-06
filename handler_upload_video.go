@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -73,15 +76,29 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't check aspect ratio", err)
+		return
+	}
+
 	tempFile.Seek(0, io.SeekStart)
 
-	newVideoKey := fmt.Sprintf("%s.mp4", videoIDString)
+	ratio := "other"
+	if aspectRatio == "16:9" {
+		ratio = "landscape"
+	}
+	if aspectRatio == "9:16" {
+		ratio = "portrait"
+	}
+
+	newVideoKey := fmt.Sprintf("%s/%s.mp4", ratio, videoIDString)
 
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         aws.String(newVideoKey),
 		Body:        tempFile,
-		ContentType: aws.String("video/mp4"),
+		ContentType: aws.String(videoCheck),
 	})
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error uploading file to S3", err)
@@ -95,4 +112,35 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "Error updating video data in db", err)
 		return
 	}
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	cmd := exec.Command("ffprobe", "-v error -print_format json -show_streams", filePath)
+	buf := &bytes.Buffer{}
+	cmd.Stdout = buf
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	type Probe struct {
+		Streams []struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		} `json:"streams"`
+	}
+
+	var p Probe
+	if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
+		return "", err
+	}
+
+	if (p.Streams[0].Height%16 == 0) && (p.Streams[0].Width%9 == 0) {
+		return "16:9", nil
+	}
+	if (p.Streams[0].Height%9 == 0) && (p.Streams[0].Width%16 == 0) {
+		return "9:16", nil
+	}
+
+	return "other", nil
 }
