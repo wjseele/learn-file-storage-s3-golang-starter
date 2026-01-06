@@ -115,7 +115,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 }
 
 func getVideoAspectRatio(filePath string) (string, error) {
-	cmd := exec.Command("ffprobe", "-v error -print_format json -show_streams", filePath)
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
 	err := cmd.Run()
@@ -125,8 +125,9 @@ func getVideoAspectRatio(filePath string) (string, error) {
 
 	type Probe struct {
 		Streams []struct {
-			Width  int `json:"width"`
-			Height int `json:"height"`
+			Width  int    `json:"width"`
+			Height int    `json:"height"`
+			Ratio  string `json:"display_aspect_ratio"`
 		} `json:"streams"`
 	}
 
@@ -134,11 +135,14 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	if err := json.Unmarshal(buf.Bytes(), &p); err != nil {
 		return "", err
 	}
+	if p.Streams[0].Ratio == "16:9" || p.Streams[0].Ratio == "9:16" {
+		return p.Streams[0].Ratio, nil
+	}
 
-	if (p.Streams[0].Height%16 == 0) && (p.Streams[0].Width%9 == 0) {
+	if (p.Streams[0].Width%16 == 0) && (p.Streams[0].Height%9 == 0) {
 		return "16:9", nil
 	}
-	if (p.Streams[0].Height%9 == 0) && (p.Streams[0].Width%16 == 0) {
+	if (p.Streams[0].Width%9 == 0) && (p.Streams[0].Height%16 == 0) {
 		return "9:16", nil
 	}
 
