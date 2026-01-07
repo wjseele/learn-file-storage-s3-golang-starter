@@ -118,13 +118,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	newUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, newVideoKey)
+	// newUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, newVideoKey)
+	newUrl := fmt.Sprintf("%s,%s", cfg.s3Bucket, newVideoKey)
 	videoData.VideoURL = &newUrl
+
 	err = cfg.db.UpdateVideo(videoData)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error updating video data in db", err)
 		return
 	}
+
+	videoData, err = cfg.dbVideoToSignedVideo(videoData)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error generating signed link to video", err)
+		return
+	}
+
 }
 
 func getVideoAspectRatio(filePath string) (string, error) {
