@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 )
 
 func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	if video.VideoURL == nil {
+		return video, fmt.Errorf("Video url missing")
+	}
 	parts := strings.Split(*video.VideoURL, ",")
 	bucket, key := parts[0], parts[1]
 	newUrl, err := generatePresignedURL(cfg.s3Client, bucket, key, 10*time.Minute)

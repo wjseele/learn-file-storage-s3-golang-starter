@@ -66,7 +66,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tempFile, err := os.CreateTemp("", "tubely-upload.mp4")
+	tempFile, _ := os.CreateTemp("", "tubely-upload.mp4")
 	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
 
